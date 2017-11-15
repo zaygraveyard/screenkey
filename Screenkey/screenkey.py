@@ -12,6 +12,7 @@ from threading import Timer
 import json
 import os
 import subprocess
+import signal
 
 import glib
 glib.threads_init()
@@ -742,4 +743,5 @@ class Screenkey(gtk.Window):
 
 
 def run():
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
     gtk.main()
