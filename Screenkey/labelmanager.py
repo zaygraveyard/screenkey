@@ -139,13 +139,15 @@ def keysym_to_mod(keysym):
 
 
 class LabelManager(object):
-    def __init__(self, listener, logger, key_mode, bak_mode, mods_mode, mods_only,
-                 multiline, vis_shift, vis_space, recent_thr, compr_cnt, ignore, pango_ctx):
+    def __init__(self, label_listener, image_listener, logger, key_mode,
+                 bak_mode, mods_mode, mods_only, multiline, vis_shift,
+                 vis_space, recent_thr, compr_cnt, ignore, pango_ctx):
         self.key_mode = key_mode
         self.bak_mode = bak_mode
         self.mods_mode = mods_mode
         self.logger = logger
-        self.listener = listener
+        self.label_listener = label_listener
+        self.image_listener = image_listener
         self.data = []
         self.enabled = True
         self.mods_only = mods_only
@@ -168,7 +170,9 @@ class LabelManager(object):
         self.stop()
         compose = (self.key_mode == 'composed')
         translate = (self.key_mode in ['composed', 'translated'])
-        self.kl = InputListener(self.key_press, InputType.keyboard, compose, translate)
+        self.kl = InputListener(self.key_press, self.btn_press,
+                                InputType.keyboard | InputType.button, compose,
+                                translate)
         self.kl.start()
         self.logger.debug("Thread started.")
 
@@ -264,7 +268,7 @@ class LabelManager(object):
         if recent:
             markup += '</u>'
         self.logger.debug("Label updated: %s." % repr(markup))
-        self.listener(markup)
+        self.label_listener(markup)
 
 
     def key_press(self, event):
@@ -440,3 +444,18 @@ class LabelManager(object):
             value = event.string or event.symbol
         self.data.append(KeyData(datetime.now(), True, True, True, True, value))
         return True
+
+
+    def btn_press(self, event):
+        if not self.enabled:
+            return False
+
+        if event.pressed:
+            action = "pressed"
+            image_file = event.btn
+        else:
+            action = "released"
+            image_file = "released"
+
+        self.logger.debug("Mouse button %d %s" % (event.btn, action))
+        self.image_listener(image_file)

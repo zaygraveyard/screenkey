@@ -24,6 +24,13 @@ import pango
 import cairo
 
 
+def resize_height(img, height):
+    pixbuf = img.get_pixbuf()
+    new_width = pixbuf.get_width() * height // pixbuf.get_height()
+    pixbuf = pixbuf.scale_simple(new_width, height, gtk.gdk.INTERP_BILINEAR)
+    img.set_from_pixbuf(pixbuf)
+
+
 class Screenkey(gtk.Window):
     STATE_FILE = os.path.join(glib.get_user_config_dir(), 'screenkey.json')
 
@@ -74,12 +81,18 @@ class Screenkey(gtk.Window):
         self.set_focus_on_map(False)
         self.set_app_paintable(True)
 
+        self.box = gtk.HBox(homogeneous=False)
+        self.box.show()
+        self.add(self.box)
+
+        self.img = gtk.Image()
+        self.img.show()
+
         self.label = gtk.Label()
         self.label.set_attributes(pango.AttrList())
         self.label.set_ellipsize(pango.ELLIPSIZE_START)
         self.label.set_justify(gtk.JUSTIFY_CENTER)
         self.label.show()
-        self.add(self.label)
 
         self.font = pango.FontDescription(self.options.font_desc)
         self.update_colors()
@@ -97,6 +110,16 @@ class Screenkey(gtk.Window):
         cmap = scr.get_rgba_colormap()
         if cmap is not None:
             self.set_colormap(cmap)
+
+        # gtk.Image height is set to the height of what gtk.Label is going to be
+        # is there a better way than quickly showing and hiding to set gtk.Label's allocation?
+        self.show()
+        self.hide()
+
+        self.img.set_from_file("images/released.png")
+        resize_height(self.img, self.label.get_allocation().height)
+        self.box.pack_start(self.img, expand=False)
+        self.box.pack_end(self.label)
 
         self.labelmngr = None
         self.enabled = True
@@ -252,12 +275,7 @@ class Screenkey(gtk.Window):
         super(Screenkey, self).show()
 
 
-    def on_label_change(self, markup):
-        attr, text, _ = pango.parse_markup(markup)
-        self.override_font_attributes(attr, text)
-        self.label.set_text(text)
-        self.label.set_attributes(attr)
-
+    def timed_show(self):
         if not self.get_property('visible'):
             self.show()
         if self.timer_hide:
@@ -269,6 +287,21 @@ class Screenkey(gtk.Window):
             self.timer_min.cancel()
         self.timer_min = Timer(self.options.recent_thr * 2, self.on_timeout_min)
         self.timer_min.start()
+
+
+    def on_label_change(self, markup):
+        attr, text, _ = pango.parse_markup(markup)
+        self.override_font_attributes(attr, text)
+        self.label.set_text(text)
+        self.label.set_attributes(attr)
+        self.timed_show()
+
+
+    def on_image_change(self, image_file):
+        height = self.label.get_allocation().height
+        self.img.set_from_file("images/%s.png" % image_file)
+        resize_height(self.img, height)
+        self.timed_show()
 
 
     def on_timeout_main(self):
@@ -288,7 +321,9 @@ class Screenkey(gtk.Window):
         self.logger.debug("Restarting LabelManager.")
         if self.labelmngr:
             self.labelmngr.stop()
-        self.labelmngr = LabelManager(self.on_label_change, logger=self.logger,
+        self.labelmngr = LabelManager(self.on_label_change,
+                                      self.on_image_change,
+                                      logger=self.logger,
                                       key_mode=self.options.key_mode,
                                       bak_mode=self.options.bak_mode,
                                       mods_mode=self.options.mods_mode,

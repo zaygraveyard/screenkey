@@ -157,6 +157,12 @@ class KeyData():
         self.modifiers = modifiers
 
 
+class ButtonData():
+    def __init__(self, btn, pressed):
+        self.btn = btn
+        self.pressed = pressed == xlib.ButtonPress
+
+
 class InputType:
     keyboard = 0b001
     button   = 0b010
@@ -166,9 +172,11 @@ class InputType:
 
 
 class InputListener(threading.Thread):
-    def __init__(self, callback, input_types=InputType.all, kbd_compose=True, kbd_translate=True):
+    def __init__(self, kbd_callback, btn_callback, input_types=InputType.all,
+                 kbd_compose=True, kbd_translate=True):
         super(InputListener, self).__init__()
-        self.callback = callback
+        self.kbd_callback = kbd_callback
+        self.btn_callback = btn_callback
         self.input_types = input_types
         self.kbd_compose = kbd_compose
         self.kbd_translate = kbd_translate
@@ -191,15 +199,19 @@ class InputListener(threading.Thread):
             xlib.XSendEvent(self.replay_dpy, self.replay_win, False, 0, fwd_ev)
 
 
-    def _event_callback(self, data):
-        self.callback(data)
+    def _kdb_event_callback(self, data):
+        self.kbd_callback(data)
+        return False
+
+    def _btn_event_callback(self, data):
+        self.btn_callback(data)
         return False
 
     def _event_processed(self, data):
         data.symbol = xlib.XKeysymToString(data.keysym)
         if data.string is None:
             data.string = keysym_to_unicode(data.keysym)
-        glib.idle_add(self._event_callback, data)
+        glib.idle_add(self._kdb_event_callback, data)
 
 
     def _event_modifiers(self, kev, data):
@@ -315,6 +327,12 @@ class InputListener(threading.Thread):
         self._kbd_last_ev = ev
 
 
+    def _btn_process(self, ev):
+        if ev.type in [xlib.ButtonPress, xlib.ButtonRelease]:
+            data = ButtonData(ev.xbutton.button, ev.type)
+            glib.idle_add(self._btn_event_callback, data)
+
+
     def run(self):
         # control connection
         self.control_dpy = xlib.XOpenDisplay(None)
@@ -384,6 +402,8 @@ class InputListener(threading.Thread):
                 xlib.XNextEvent(self.replay_dpy, xlib.byref(ev))
                 if self.input_types & InputType.keyboard:
                     self._kbd_process(ev)
+                if self.input_types & InputType.button:
+                    self._btn_process(ev)
 
         # finalize
         xlib.XRecordFreeContext(self.control_dpy, self.record_ctx)
