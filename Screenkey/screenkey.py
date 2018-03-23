@@ -120,6 +120,12 @@ class Screenkey(gtk.Window):
         self.box.show()
         self.add(self.box)
 
+        self.mod_label = gtk.Label()
+        self.mod_label.set_attributes(pango.AttrList())
+        self.mod_label.set_ellipsize(pango.ELLIPSIZE_NONE)
+        self.mod_label.set_justify(gtk.JUSTIFY_LEFT)
+        self.mod_label.show()
+
         self.label = gtk.Label()
         self.label.set_attributes(pango.AttrList())
         self.label.set_ellipsize(pango.ELLIPSIZE_START)
@@ -145,6 +151,7 @@ class Screenkey(gtk.Window):
             self.set_colormap(cmap)
 
         self.box.pack_start(self.img, expand=False)
+        self.box.pack_start(self.mod_label, expand=False)
         self.box.pack_end(self.label)
 
         self.labelmngr = None
@@ -236,6 +243,10 @@ class Screenkey(gtk.Window):
 
 
     def update_label(self):
+        attr = self.mod_label.get_attributes()
+        text = self.mod_label.get_text()
+        self.override_font_attributes(attr, text)
+        self.mod_label.set_attributes(attr)
         attr = self.label.get_attributes()
         text = self.label.get_text()
         self.override_font_attributes(attr, text)
@@ -285,6 +296,7 @@ class Screenkey(gtk.Window):
 
     def update_colors(self):
         font_color = gtk.gdk.color_parse(self.options.font_color)
+        self.mod_label.modify_fg(gtk.STATE_NORMAL, font_color)
         self.label.modify_fg(gtk.STATE_NORMAL, font_color)
         self.bg_color = gtk.gdk.color_parse(self.options.bg_color)
         if self.options.mouse and self.button_pixbufs:
@@ -313,6 +325,7 @@ class Screenkey(gtk.Window):
         self.input_shape_combine_mask(mask, 0, 0)
 
         # set some proportional inner padding
+        self.mod_label.set_padding(window_width // 100, 0)
         self.label.set_padding(window_width // 100, 0)
 
         self.update_label()
@@ -385,6 +398,14 @@ class Screenkey(gtk.Window):
         self.timer_min.start()
 
 
+    def on_mod_change(self, markup):
+        attr, text, _ = pango.parse_markup(markup)
+        self.override_font_attributes(attr, text)
+        self.mod_label.set_text(text)
+        self.mod_label.set_attributes(attr)
+        self.timed_show()
+
+
     def on_image_change(self, button_state):
         self.button_states[button_state.btn] = button_state
         if self.options.mouse:
@@ -409,6 +430,7 @@ class Screenkey(gtk.Window):
         if self.labelmngr:
             self.labelmngr.stop()
         self.labelmngr = LabelManager(self.on_label_change,
+                                      self.on_mod_change,
                                       self.on_image_change,
                                       logger=self.logger,
                                       key_mode=self.options.key_mode,

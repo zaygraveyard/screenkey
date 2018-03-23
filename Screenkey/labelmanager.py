@@ -140,14 +140,16 @@ def keysym_to_mod(keysym):
 
 
 class LabelManager(object):
-    def __init__(self, label_listener, image_listener, logger, key_mode,
-                 bak_mode, mods_mode, mods_only, multiline, vis_shift,
-                 vis_space, recent_thr, compr_cnt, ignore, pango_ctx):
+    def __init__(self, label_listener, mod_listener, image_listener, logger,
+                 key_mode, bak_mode, mods_mode, mods_only, multiline,
+                 vis_shift, vis_space, recent_thr, compr_cnt, ignore,
+                 pango_ctx):
         self.key_mode = key_mode
         self.bak_mode = bak_mode
         self.mods_mode = mods_mode
         self.logger = logger
         self.label_listener = label_listener
+        self.mod_listener = mod_listener
         self.image_listener = image_listener
         self.data = []
         self.enabled = True
@@ -275,6 +277,8 @@ class LabelManager(object):
     def key_press(self, event):
         if event.pressed == False:
             self.logger.debug("Key released {:5}(ks): {}".format(event.keysym, event.symbol))
+            if self.enabled:
+                self.key_mod(event)
             return
         if event.symbol in self.ignore:
             self.logger.debug("Key ignored  {:5}(ks): {}".format(event.keysym, event.symbol))
@@ -298,6 +302,8 @@ class LabelManager(object):
         if not self.enabled:
             return False
 
+        self.key_mod(event)
+
         # keep the window alive as the user is composing
         mod_pressed = keysym_to_mod(event.symbol) is not None
         update = len(self.data) and (event.filtered or mod_pressed)
@@ -313,10 +319,24 @@ class LabelManager(object):
             self.update_text()
 
 
+    def key_mod(self, event):
+        mods = event.modifiers.copy()
+        mods[keysym_to_mod(event.symbol)] = event.pressed
+
+        mod = ''
+        for cap in ['shift', 'ctrl', 'alt', 'super', 'hyper']:
+            if mods[cap]:
+                mod = mod + self.replace_mods[cap]
+
+        if mod != '':
+            mod = mod[:-1].replace(mod[-1], ' ')
+        self.mod_listener(unicode(glib.markup_escape_text(mod)))
+
+
     def key_normal_mode(self, event):
         # Visible modifiers
         mod = ''
-        for cap in ['ctrl', 'alt', 'super', 'hyper']:
+        for cap in ['shift', 'ctrl', 'alt', 'super', 'hyper']:
             if event.modifiers[cap]:
                 mod = mod + self.replace_mods[cap]
 
@@ -354,13 +374,6 @@ class LabelManager(object):
                 repl = event.string or event.symbol
                 markup = unicode(glib.markup_escape_text(repl))
                 key_repl = KeyRepl(False, False, len(repl) > 1, markup)
-
-        if event.modifiers['shift'] and \
-           (replaced or (mod != '' and \
-                         self.vis_shift and \
-                         self.mods_mode != 'emacs')):
-            # add back shift for translated keys
-            mod = mod + self.replace_mods['shift']
 
         # Whitespace handling
         if not self.vis_space and mod == '' and event.symbol in WHITESPACE_SYMS:
