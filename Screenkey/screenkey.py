@@ -26,9 +26,10 @@ import cairo
 
 def resize_height(img, height):
     pixbuf = img.get_pixbuf()
-    new_width = pixbuf.get_width() * height // pixbuf.get_height()
-    pixbuf = pixbuf.scale_simple(new_width, height, gtk.gdk.INTERP_BILINEAR)
-    img.set_from_pixbuf(pixbuf)
+    if pixbuf.get_height() != height:
+        new_width = pixbuf.get_width() * height // pixbuf.get_height()
+        pixbuf = pixbuf.scale_simple(new_width, height, gtk.gdk.INTERP_BILINEAR)
+        img.set_from_pixbuf(pixbuf)
 
 
 class Screenkey(gtk.Window):
@@ -111,13 +112,8 @@ class Screenkey(gtk.Window):
         if cmap is not None:
             self.set_colormap(cmap)
 
-        # gtk.Image height is set to the height of what gtk.Label is going to be
-        # is there a better way than quickly showing and hiding to set gtk.Label's allocation?
-        self.show()
-        self.hide()
+        self.update_image('released')
 
-        self.img.set_from_file("images/released.png")
-        resize_height(self.img, self.label.get_allocation().height)
         self.box.pack_start(self.img, expand=False)
         self.box.pack_end(self.label)
 
@@ -201,6 +197,17 @@ class Screenkey(gtk.Window):
         self.label.set_attributes(attr)
 
 
+    def update_image(self, image_file=None):
+        if image_file:
+            self._image_file = image_file
+        else:
+            image_file = self._image_file
+
+        _, height = self.get_size()
+        self.img.set_from_file("images/%s.png" % image_file)
+        resize_height(self.img, height)
+
+
     def update_colors(self):
         self.label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse(self.options.font_color))
         self.bg_color = gtk.gdk.color_parse(self.options.bg_color)
@@ -231,6 +238,7 @@ class Screenkey(gtk.Window):
         self.label.set_padding(window_width // 100, 0)
 
         self.update_label()
+        self.update_image()
 
 
     def update_geometry(self, configure=False):
@@ -252,6 +260,7 @@ class Screenkey(gtk.Window):
             window_height = 12 * area_geometry[3] // 100
         else:
             window_height = 8 * area_geometry[3] // 100
+
         self.resize(area_geometry[2], window_height)
 
         if self.options.position == 'top':
@@ -298,9 +307,7 @@ class Screenkey(gtk.Window):
 
 
     def on_image_change(self, image_file):
-        height = self.label.get_allocation().height
-        self.img.set_from_file("images/%s.png" % image_file)
-        resize_height(self.img, height)
+        self.update_image(image_file)
         self.timed_show()
 
 
