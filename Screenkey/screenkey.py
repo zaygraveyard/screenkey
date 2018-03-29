@@ -115,7 +115,8 @@ class Screenkey(gtk.Window):
             gtk.gdk.pixbuf_new_from_file('images/6.png'),
             gtk.gdk.pixbuf_new_from_file('images/7.png'),
         ]
-        self.button_state = None
+        self.button_states = [None] * len(self.button_pixbufs)
+        self.button_hide_duration = 1
 
         self.box.pack_start(self.img, expand=False)
         self.box.pack_end(self.label)
@@ -203,20 +204,26 @@ class Screenkey(gtk.Window):
 
 
     def update_image(self):
-        if self.button_state is None:
-            return True
-
-        if self.button_state.pressed:
-            alpha = 255
-        else:
-            hide_duration = 1
-            delta_time = (datetime.now() - self.button_state.stamp).total_seconds()
-            alpha = int(255 * (1 - min(1, delta_time / hide_duration)))
-
         pixbuf = self.button_pixbufs[0]
-        if alpha > 0:
-            pixbuf = pixbuf.copy()
-            self.button_pixbufs[self.button_state.btn].composite(
+        copied = False
+
+        for index, button_state in enumerate(self.button_states):
+            if button_state is None:
+                continue
+            if button_state.pressed:
+                alpha = 255
+            else:
+                delta_time = (datetime.now() - button_state.stamp).total_seconds()
+                hide_time = delta_time / self.button_hide_duration
+                if hide_time < 1:
+                    alpha = int(255 * (1 - hide_time))
+                else:
+                    self.button_states[index] = None
+                    continue
+
+            if not copied:
+                pixbuf = pixbuf.copy()
+            self.button_pixbufs[button_state.btn].composite(
                 pixbuf, 0, 0, pixbuf.get_width(), pixbuf.get_height(),
                 0, 0, 1, 1,
                 gtk.gdk.INTERP_NEAREST, alpha
@@ -312,7 +319,7 @@ class Screenkey(gtk.Window):
             self.show()
         if self.timer_hide:
             self.timer_hide.cancel()
-        if self.options.timeout > 0 and not self.button_state.pressed:
+        if self.options.timeout > 0 and not any(b and b.pressed for b in self.button_states):
             self.timer_hide = Timer(self.options.timeout, self.on_timeout_main)
             self.timer_hide.start()
 
@@ -331,7 +338,7 @@ class Screenkey(gtk.Window):
 
 
     def on_image_change(self, button_state):
-        self.button_state = button_state
+        self.button_states[button_state.btn] = button_state
         self.timed_show()
 
 
