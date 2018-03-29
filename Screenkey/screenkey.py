@@ -55,7 +55,9 @@ class Screenkey(gtk.Window):
                             'vis_shift': False,
                             'vis_space': True,
                             'geometry': None,
-                            'screen': 0})
+                            'screen': 0,
+                            'mouse': False,
+                            'button_hide_duration': 1})
         self.options = self.load_state()
         if self.options is None:
             self.options = defaults
@@ -78,9 +80,6 @@ class Screenkey(gtk.Window):
         self.box = gtk.HBox(homogeneous=False)
         self.box.show()
         self.add(self.box)
-
-        self.img = gtk.Image()
-        self.img.show()
 
         self.label = gtk.Label()
         self.label.set_attributes(pango.AttrList())
@@ -105,23 +104,14 @@ class Screenkey(gtk.Window):
         if cmap is not None:
             self.set_colormap(cmap)
 
-        self.button_pixbufs = [
-            gtk.gdk.pixbuf_new_from_file('images/released.png'),
-            gtk.gdk.pixbuf_new_from_file('images/1.png'),
-            gtk.gdk.pixbuf_new_from_file('images/2.png'),
-            gtk.gdk.pixbuf_new_from_file('images/3.png'),
-            gtk.gdk.pixbuf_new_from_file('images/4.png'),
-            gtk.gdk.pixbuf_new_from_file('images/5.png'),
-            gtk.gdk.pixbuf_new_from_file('images/6.png'),
-            gtk.gdk.pixbuf_new_from_file('images/7.png'),
-        ]
-        self.button_states = [None] * len(self.button_pixbufs)
-        self.button_hide_duration = 1
+        self.button_pixbufs = []
+        self.button_states = [None] * 8
+        self.img = gtk.Image()
+        self.update_image_tag = None
+        self.update_mouse_enabled()
 
         self.box.pack_start(self.img, expand=False)
         self.box.pack_end(self.label)
-
-        glib.idle_add(self.update_image)
 
         self.labelmngr = None
         self.enabled = True
@@ -188,6 +178,28 @@ class Screenkey(gtk.Window):
         self.set_active_monitor(self.monitor)
 
 
+    def update_mouse_enabled(self):
+        if self.options.mouse:
+            if not self.button_pixbufs:
+                self.button_pixbufs = [
+                    gtk.gdk.pixbuf_new_from_file('images/released.png'),
+                    gtk.gdk.pixbuf_new_from_file('images/1.png'),
+                    gtk.gdk.pixbuf_new_from_file('images/2.png'),
+                    gtk.gdk.pixbuf_new_from_file('images/3.png'),
+                    gtk.gdk.pixbuf_new_from_file('images/4.png'),
+                    gtk.gdk.pixbuf_new_from_file('images/5.png'),
+                    gtk.gdk.pixbuf_new_from_file('images/6.png'),
+                    gtk.gdk.pixbuf_new_from_file('images/7.png'),
+                ]
+            self.img.show()
+            self.update_image_tag = glib.idle_add(self.update_image)
+        else:
+            self.img.hide()
+            if self.update_image_tag is not None:
+                glib.source_remove(self.update_image_tag)
+                self.update_image_tag = None
+
+
     def override_font_attributes(self, attr, text):
         window_width, window_height = self.get_size()
         lines = text.count('\n') + 1
@@ -213,8 +225,11 @@ class Screenkey(gtk.Window):
             if button_state.pressed:
                 alpha = 255
             else:
-                delta_time = (datetime.now() - button_state.stamp).total_seconds()
-                hide_time = delta_time / self.button_hide_duration
+                if self.options.button_hide_duration > 0:
+                    delta_time = (datetime.now() - button_state.stamp).total_seconds()
+                    hide_time = delta_time / self.options.button_hide_duration
+                else:
+                    hide_time = 1
                 if hide_time < 1:
                     alpha = int(255 * (1 - hide_time))
                 else:
@@ -339,7 +354,8 @@ class Screenkey(gtk.Window):
 
     def on_image_change(self, button_state):
         self.button_states[button_state.btn] = button_state
-        self.timed_show()
+        if self.options.mouse:
+            self.timed_show()
 
 
     def on_timeout_main(self):
@@ -545,6 +561,15 @@ class Screenkey(gtk.Window):
             self.options.font_desc = widget.get_font_name()
             self.font = pango.FontDescription(self.options.font_desc)
             self.update_label()
+
+        def on_cbox_mouse_changed(widget, data=None):
+            self.options.mouse = widget.get_active()
+            self.logger.debug("Mouse changed: %s." % self.options.mouse)
+            self.update_mouse_enabled()
+
+        def on_sb_mouse_duration_changed(widget, data=None):
+            self.options.button_hide_duration = widget.get_value()
+            self.logger.debug("Button hide duration value changed: %f." % self.options.button_hide_duration)
 
         frm_main = gtk.Frame(_("Preferences"))
         frm_main.set_border_width(6)
@@ -766,6 +791,35 @@ class Screenkey(gtk.Window):
         vbox_color.pack_start(hbox5_opacity)
         frm_color.add(vbox_color)
 
+        frm_mouse = gtk.Frame("<b>%s</b>" % _("Mouse"))
+        frm_mouse.set_border_width(4)
+        frm_mouse.get_label_widget().set_use_markup(True)
+        frm_mouse.set_shadow_type(gtk.SHADOW_NONE)
+        vbox_mouse = gtk.VBox(spacing=6)
+
+        chk_mouse = gtk.CheckButton(_("Show Mouse"))
+        chk_mouse.connect("toggled", on_cbox_mouse_changed)
+        chk_mouse.set_active(self.options.mouse)
+        vbox_mouse.pack_start(chk_mouse)
+
+        hbox_mouse = gtk.HBox()
+        lbl_mouse1 = gtk.Label(_("Hide duration"))
+        lbl_mouse2 = gtk.Label(_("seconds"))
+        sb_mouse = gtk.SpinButton(digits=1)
+        sb_mouse.set_increments(0.5, 1.0)
+        sb_mouse.set_range(0.0, 2.0)
+        sb_mouse.set_numeric(True)
+        sb_mouse.set_update_policy(gtk.UPDATE_IF_VALID)
+        sb_mouse.set_value(self.options.button_hide_duration)
+        sb_mouse.connect("value-changed", on_sb_mouse_duration_changed)
+        hbox_mouse.pack_start(lbl_mouse1, expand=False, fill=False, padding=6)
+        hbox_mouse.pack_start(sb_mouse, expand=False, fill=False, padding=4)
+        hbox_mouse.pack_start(lbl_mouse2, expand=False, fill=False, padding=4)
+        vbox_mouse.pack_start(hbox_mouse)
+
+        frm_mouse.add(vbox_mouse)
+        frm_mouse.show_all()
+
         hbox_main = gtk.HBox()
         vbox_main = gtk.VBox()
         vbox_main.pack_start(frm_time, False, False, 6)
@@ -775,6 +829,7 @@ class Screenkey(gtk.Window):
         vbox_main = gtk.VBox()
         vbox_main.pack_start(frm_kbd, False, False, 6)
         vbox_main.pack_start(frm_color, False, False, 6)
+        vbox_main.pack_start(frm_mouse, False, False, 6)
         hbox_main.pack_start(vbox_main)
         frm_main.add(hbox_main)
 
