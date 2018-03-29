@@ -9,6 +9,7 @@ from . import *
 from .labelmanager import LabelManager
 
 from threading import Timer
+from datetime import datetime
 import json
 import os
 import subprocess
@@ -22,14 +23,6 @@ pygtk.require('2.0')
 import gtk
 import pango
 import cairo
-
-
-def resize_height(img, height):
-    pixbuf = img.get_pixbuf()
-    if pixbuf.get_height() != height:
-        new_width = pixbuf.get_width() * height // pixbuf.get_height()
-        pixbuf = pixbuf.scale_simple(new_width, height, gtk.gdk.INTERP_BILINEAR)
-        img.set_from_pixbuf(pixbuf)
 
 
 class Screenkey(gtk.Window):
@@ -112,10 +105,22 @@ class Screenkey(gtk.Window):
         if cmap is not None:
             self.set_colormap(cmap)
 
-        self.update_image('released')
+        self.button_pixbufs = [
+            gtk.gdk.pixbuf_new_from_file('images/released.png'),
+            gtk.gdk.pixbuf_new_from_file('images/1.png'),
+            gtk.gdk.pixbuf_new_from_file('images/2.png'),
+            gtk.gdk.pixbuf_new_from_file('images/3.png'),
+            gtk.gdk.pixbuf_new_from_file('images/4.png'),
+            gtk.gdk.pixbuf_new_from_file('images/5.png'),
+            gtk.gdk.pixbuf_new_from_file('images/6.png'),
+            gtk.gdk.pixbuf_new_from_file('images/7.png'),
+        ]
+        self.button_state = None
 
         self.box.pack_start(self.img, expand=False)
         self.box.pack_end(self.label)
+
+        glib.idle_add(self.update_image)
 
         self.labelmngr = None
         self.enabled = True
@@ -197,15 +202,33 @@ class Screenkey(gtk.Window):
         self.label.set_attributes(attr)
 
 
-    def update_image(self, image_file=None):
-        if image_file:
-            self._image_file = image_file
+    def update_image(self):
+        if self.button_state is None:
+            return True
+
+        if self.button_state.pressed:
+            alpha = 255
         else:
-            image_file = self._image_file
+            hide_duration = 1
+            delta_time = (datetime.now() - self.button_state.stamp).total_seconds()
+            alpha = int(255 * (1 - min(1, delta_time / hide_duration)))
+
+        pixbuf = self.button_pixbufs[0]
+        if alpha > 0:
+            pixbuf = pixbuf.copy()
+            self.button_pixbufs[self.button_state.btn].composite(
+                pixbuf, 0, 0, pixbuf.get_width(), pixbuf.get_height(),
+                0, 0, 1, 1,
+                gtk.gdk.INTERP_NEAREST, alpha
+            )
 
         _, height = self.get_size()
-        self.img.set_from_file("images/%s.png" % image_file)
-        resize_height(self.img, height)
+        scale = height / pixbuf.get_height()
+        if scale != 1:
+            width = int(pixbuf.get_width() * scale)
+            pixbuf = pixbuf.scale_simple(width, height, gtk.gdk.INTERP_BILINEAR)
+        self.img.set_from_pixbuf(pixbuf)
+        return True
 
 
     def update_colors(self):
@@ -289,13 +312,9 @@ class Screenkey(gtk.Window):
             self.show()
         if self.timer_hide:
             self.timer_hide.cancel()
-        if self.options.timeout > 0:
+        if self.options.timeout > 0 and not self.button_state.pressed:
             self.timer_hide = Timer(self.options.timeout, self.on_timeout_main)
             self.timer_hide.start()
-        if self.timer_min:
-            self.timer_min.cancel()
-        self.timer_min = Timer(self.options.recent_thr * 2, self.on_timeout_min)
-        self.timer_min.start()
 
 
     def on_label_change(self, markup):
@@ -303,11 +322,16 @@ class Screenkey(gtk.Window):
         self.override_font_attributes(attr, text)
         self.label.set_text(text)
         self.label.set_attributes(attr)
+
         self.timed_show()
+        if self.timer_min:
+            self.timer_min.cancel()
+        self.timer_min = Timer(self.options.recent_thr * 2, self.on_timeout_min)
+        self.timer_min.start()
 
 
-    def on_image_change(self, image_file):
-        self.update_image(image_file)
+    def on_image_change(self, button_state):
+        self.button_state = button_state
         self.timed_show()
 
 

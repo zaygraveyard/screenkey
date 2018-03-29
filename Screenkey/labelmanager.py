@@ -22,6 +22,7 @@ from datetime import datetime
 ReplData = namedtuple('ReplData', ['value', 'font'])
 KeyRepl  = namedtuple('KeyRepl',  ['bk_stop', 'silent', 'spaced', 'repl'])
 KeyData  = namedtuple('KeyData',  ['stamp', 'is_ctrl', 'bk_stop', 'silent', 'spaced', 'markup'])
+ButtonData = namedtuple('ButtonData',  ['stamp', 'btn', 'pressed'])
 
 REPLACE_SYMS = {
     # Regular keys
@@ -452,10 +453,10 @@ class LabelManager(object):
 
         if event.pressed:
             action = "pressed"
-            image_file = event.btn
         else:
             action = "released"
-            image_file = "released"
-
         self.logger.debug("Mouse button %d %s" % (event.btn, action))
-        self.image_listener(image_file)
+
+        self.image_listener(
+            ButtonData(datetime.now(), event.btn, event.pressed)
+        )
