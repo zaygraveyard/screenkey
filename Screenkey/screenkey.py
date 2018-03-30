@@ -216,6 +216,9 @@ class Screenkey(gtk.Window):
 
 
     def update_image(self):
+        if not self.button_pixbufs:
+            return
+
         pixbuf = self.button_pixbufs[0]
         copied = False
 
