@@ -13,6 +13,7 @@ from datetime import datetime
 import json
 import os
 import subprocess
+from tempfile import NamedTemporaryFile
 
 import glib
 glib.threads_init()
@@ -23,6 +24,40 @@ pygtk.require('2.0')
 import gtk
 import pango
 import cairo
+
+
+BUTTONS_SVG = None
+
+def load_button_pixbufs(color):
+    global BUTTONS_SVG
+
+    if BUTTONS_SVG is None:
+        with open('images/mouse.svg', 'r') as svg_file:
+            BUTTONS_SVG = svg_file.readlines()
+
+    if not isinstance(color, basestring):
+        # gtk.gdk.Color
+        color = 'rgb({}, {}, {})'.format(
+            round(color.red_float * 255),
+            round(color.green_float * 255),
+            round(color.blue_float * 255)
+        )
+    print('load_button_pixbufs', color)
+    button_pixbufs = []
+    svg = NamedTemporaryFile(mode='w', suffix='.svg')
+    for line in BUTTONS_SVG[1:-1]:
+        svg.seek(0)
+        svg.truncate()
+        svg.writelines((
+            BUTTONS_SVG[0],
+            line.replace('#fff', color),
+            BUTTONS_SVG[-1],
+        ))
+        svg.flush()
+        os.fsync(svg.fileno())
+        button_pixbufs.append(gtk.gdk.pixbuf_new_from_file(svg.name))
+    svg.close()
+    return button_pixbufs
 
 
 class Screenkey(gtk.Window):
@@ -77,6 +112,11 @@ class Screenkey(gtk.Window):
         self.set_focus_on_map(False)
         self.set_app_paintable(True)
 
+        self.button_pixbufs = []
+        self.button_states = [None] * 8
+        self.img = gtk.Image()
+        self.update_image_tag = None
+
         self.box = gtk.HBox(homogeneous=False)
         self.box.show()
         self.add(self.box)
@@ -89,6 +129,7 @@ class Screenkey(gtk.Window):
 
         self.font = pango.FontDescription(self.options.font_desc)
         self.update_colors()
+        self.update_mouse_enabled()
 
         self.set_size_request(0, 0)
         self.set_gravity(gtk.gdk.GRAVITY_CENTER)
@@ -103,12 +144,6 @@ class Screenkey(gtk.Window):
         cmap = scr.get_rgba_colormap()
         if cmap is not None:
             self.set_colormap(cmap)
-
-        self.button_pixbufs = []
-        self.button_states = [None] * 8
-        self.img = gtk.Image()
-        self.update_image_tag = None
-        self.update_mouse_enabled()
 
         self.box.pack_start(self.img, expand=False)
         self.box.pack_end(self.label)
@@ -181,16 +216,9 @@ class Screenkey(gtk.Window):
     def update_mouse_enabled(self):
         if self.options.mouse:
             if not self.button_pixbufs:
-                self.button_pixbufs = [
-                    gtk.gdk.pixbuf_new_from_file('images/released.png'),
-                    gtk.gdk.pixbuf_new_from_file('images/1.png'),
-                    gtk.gdk.pixbuf_new_from_file('images/2.png'),
-                    gtk.gdk.pixbuf_new_from_file('images/3.png'),
-                    gtk.gdk.pixbuf_new_from_file('images/4.png'),
-                    gtk.gdk.pixbuf_new_from_file('images/5.png'),
-                    gtk.gdk.pixbuf_new_from_file('images/6.png'),
-                    gtk.gdk.pixbuf_new_from_file('images/7.png'),
-                ]
+                self.button_pixbufs = load_button_pixbufs(
+                    gtk.gdk.color_parse(self.options.font_color)
+                )
             self.img.show()
             self.update_image_tag = glib.idle_add(self.update_image)
         else:
@@ -257,8 +285,11 @@ class Screenkey(gtk.Window):
 
 
     def update_colors(self):
-        self.label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse(self.options.font_color))
+        font_color = gtk.gdk.color_parse(self.options.font_color)
+        self.label.modify_fg(gtk.STATE_NORMAL, font_color)
         self.bg_color = gtk.gdk.color_parse(self.options.bg_color)
+        if self.options.mouse and self.button_pixbufs:
+            self.button_pixbufs = load_button_pixbufs(font_color)
 
 
     def on_expose(self, widget, *_):
