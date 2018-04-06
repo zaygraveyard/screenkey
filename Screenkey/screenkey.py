@@ -42,7 +42,6 @@ def load_button_pixbufs(color):
             round(color.green_float * 255),
             round(color.blue_float * 255)
         )
-    print('load_button_pixbufs', color)
     button_pixbufs = []
     svg = NamedTemporaryFile(mode='w', suffix='.svg')
     for line in BUTTONS_SVG[1:-1]:
