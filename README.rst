@@ -19,6 +19,7 @@ This is an almost-complete rewrite of screenkey_ 0.2, featuring:
 - Switch for visible shift and modifier sequences only
 - Repeats compression
 - Countless bug fixes
+- Mouse buttons support
 
 
 Installation and basic usage
@@ -149,6 +150,13 @@ Compress repeats:
   When enabled, contiguous repeated sequences are truncated after the
   requested threshold. A counter of total occurrences is shown instead,
   which is generally more legible.
+
+Show mouse:
+  When enabled, the mouse buttons are shown on the left of the output window.
+
+Hide duration:
+  Duration (in seconds) of the fade-out animation when a button is released.
+  Defaults to 1 second.
 
 
 Advanced usage
