@@ -256,7 +256,8 @@ class Screenkey(gtk.Window):
 
     def update_image(self):
         if not self.button_pixbufs:
-            return
+            self.update_image_tag = None
+            return False
 
         pixbuf = self.button_pixbufs[0]
         copied = False
@@ -280,6 +281,7 @@ class Screenkey(gtk.Window):
 
             if not copied:
                 pixbuf = pixbuf.copy()
+                copied = True
             self.button_pixbufs[button_state.btn].composite(
                 pixbuf, 0, 0, pixbuf.get_width(), pixbuf.get_height(),
                 0, 0, 1, 1,
@@ -292,6 +294,10 @@ class Screenkey(gtk.Window):
             width = int(pixbuf.get_width() * scale)
             pixbuf = pixbuf.scale_simple(width, height, gtk.gdk.INTERP_BILINEAR)
         self.img.set_from_pixbuf(pixbuf)
+
+        if not copied:
+            self.update_image_tag = None
+            return False
         return True
 
 
@@ -410,6 +416,8 @@ class Screenkey(gtk.Window):
     def on_image_change(self, button_state):
         self.button_states[button_state.btn] = button_state
         if self.options.mouse:
+            if not self.update_image_tag:
+                self.update_image_tag = glib.idle_add(self.update_image)
             self.timed_show()
 
 
