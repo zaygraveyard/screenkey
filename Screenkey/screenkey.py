@@ -13,6 +13,7 @@ from datetime import datetime
 import json
 import os
 import subprocess
+import signal
 from tempfile import NamedTemporaryFile
 
 import glib
@@ -968,4 +969,5 @@ class Screenkey(gtk.Window):
 
 
 def run():
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
     gtk.main()
