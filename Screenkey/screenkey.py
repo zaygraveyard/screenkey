@@ -150,6 +150,8 @@ class Screenkey(gtk.Window):
         cmap = scr.get_rgba_colormap()
         if cmap is not None:
             self.set_colormap(cmap)
+        else:
+            self.logger.debug('RGBA colormap not supported!')
 
         self.box.pack_start(self.img, expand=False)
         self.box.pack_start(self.mod_label, expand=False)
