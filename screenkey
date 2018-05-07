@@ -72,6 +72,10 @@ def main():
                     help=_("Ignore the specified KeySym"))
     ap.add_argument("--compr-cnt", type=int, metavar='COUNT',
                     help=_("Compress key repeats after the specified count"))
+    ap.add_argument("-M", "--mouse", action="store_true", default=None,
+                    help=_("show the mouse buttons"))
+    ap.add_argument("--mouse-fade", type=float, dest='button_hide_duration',
+                    help=_("Mouse buttons fade duration in seconds"))
     args = ap.parse_args()
 
     # Set options
@@ -79,7 +83,7 @@ def main():
     for arg in ['timeout', 'position', 'persist', 'font_desc', 'font_color', 'bg_color',
                 'font_size', 'geometry', 'key_mode', 'bak_mode', 'mods_mode', 'mods_only',
                 'multiline', 'vis_shift', 'vis_space', 'screen', 'no_systray',
-                'opacity', 'ignore', 'compr_cnt']:
+                'opacity', 'ignore', 'compr_cnt', 'mouse', 'button_hide_duration']:
         if getattr(args, arg) is not None:
             options[arg] = getattr(args, arg)
 

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="750" viewBox="0 0 127 198.44">
+  <path fill="none" stroke="#fff" stroke-linecap="round" stroke-width="5.95" d="M57.14 42.18v10a11.89 11.89 0 0 0-7.91 11.22v21.4c0 6.59 5.3 11.9 11.9 11.9h4.75c6.59 0 11.89-5.31 11.89-11.9V63.4c0-5.21-3.32-9.62-7.96-11.23l-.03-9.99zm-3.15 0a40.34 40.34 0 0 0-40.43 40.44v61.83a40.34 40.34 0 0 0 40.43 40.43H73a40.34 40.34 0 0 0 40.43-40.43V82.62A40.34 40.34 0 0 0 73 42.18z" paint-order="markers stroke fill"/>
+  <path fill="#fff" d="M46.23 51.74A35.6 35.6 0 0 0 21.88 85.6v23.3H63.5v-4.97h-2.38A19.21 19.21 0 0 1 42 84.8V63.4c0-4.46 1.63-8.47 4.24-11.66z" paint-order="markers stroke fill"/>
+  <rect width="13.08" height="29.73" x="56.96" y="59.51" fill="#fff" paint-order="markers stroke fill" rx="4.76" ry="4.76" transform="translate(0 -.53)"/>
+  <path fill="#fff" d="M80.77 51.74a35.6 35.6 0 0 1 24.35 33.86v23.3H63.5v-4.97h2.38A19.2 19.2 0 0 0 85 84.8V63.4c0-4.46-1.63-8.47-4.24-11.66z" paint-order="markers stroke fill"/>
+  <path fill="none" stroke="#fff" stroke-width="5.95" d="M53.2 25.77l10.33-10.34L73.81 25.7M63.53 37.05V15.43"/>
+  <path fill="none" stroke="#fff" stroke-width="5.95" d="M53.2 112.88l10.33 10.34 10.28-10.28M63.53 101.6v21.62"/>
+  <path fill="none" stroke="#fff" stroke-width="5.95" d="M33.06 64.05L22.72 74.39 33 84.66M44.35 74.4H22.72"/>
+  <path fill="none" stroke="#fff" stroke-width="5.95" d="M93.94 84.66l10.34-10.34L94 64.05M82.65 74.32h21.63"/>
+</svg>

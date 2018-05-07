@@ -22,6 +22,7 @@ from datetime import datetime
 ReplData = namedtuple('ReplData', ['value', 'font'])
 KeyRepl  = namedtuple('KeyRepl',  ['bk_stop', 'silent', 'spaced', 'repl'])
 KeyData  = namedtuple('KeyData',  ['stamp', 'is_ctrl', 'bk_stop', 'silent', 'spaced', 'markup'])
+ButtonData = namedtuple('ButtonData',  ['stamp', 'btn', 'pressed'])
 
 REPLACE_SYMS = {
     # Regular keys
@@ -139,13 +140,17 @@ def keysym_to_mod(keysym):
 
 
 class LabelManager(object):
-    def __init__(self, listener, logger, key_mode, bak_mode, mods_mode, mods_only,
-                 multiline, vis_shift, vis_space, recent_thr, compr_cnt, ignore, pango_ctx):
+    def __init__(self, label_listener, mod_listener, image_listener, logger,
+                 key_mode, bak_mode, mods_mode, mods_only, multiline,
+                 vis_shift, vis_space, recent_thr, compr_cnt, ignore,
+                 pango_ctx):
         self.key_mode = key_mode
         self.bak_mode = bak_mode
         self.mods_mode = mods_mode
         self.logger = logger
-        self.listener = listener
+        self.label_listener = label_listener
+        self.mod_listener = mod_listener
+        self.image_listener = image_listener
         self.data = []
         self.enabled = True
         self.mods_only = mods_only
@@ -168,7 +173,9 @@ class LabelManager(object):
         self.stop()
         compose = (self.key_mode == 'composed')
         translate = (self.key_mode in ['composed', 'translated'])
-        self.kl = InputListener(self.key_press, InputType.keyboard, compose, translate)
+        self.kl = InputListener(self.key_press, self.btn_press,
+                                InputType.keyboard | InputType.button, compose,
+                                translate)
         self.kl.start()
         self.logger.debug("Thread started.")
 
@@ -264,12 +271,14 @@ class LabelManager(object):
         if recent:
             markup += '</u>'
         self.logger.debug("Label updated: %s." % repr(markup))
-        self.listener(markup)
+        self.label_listener(markup)
 
 
     def key_press(self, event):
         if event.pressed == False:
             self.logger.debug("Key released {:5}(ks): {}".format(event.keysym, event.symbol))
+            if self.enabled:
+                self.key_mod(event)
             return
         if event.symbol in self.ignore:
             self.logger.debug("Key ignored  {:5}(ks): {}".format(event.keysym, event.symbol))
@@ -293,6 +302,8 @@ class LabelManager(object):
         if not self.enabled:
             return False
 
+        self.key_mod(event)
+
         # keep the window alive as the user is composing
         mod_pressed = keysym_to_mod(event.symbol) is not None
         update = len(self.data) and (event.filtered or mod_pressed)
@@ -308,10 +319,24 @@ class LabelManager(object):
             self.update_text()
 
 
+    def key_mod(self, event):
+        mods = event.modifiers.copy()
+        mods[keysym_to_mod(event.symbol)] = event.pressed
+
+        mod = ''
+        for cap in ['shift', 'ctrl', 'alt', 'super', 'hyper']:
+            if mods[cap]:
+                mod = mod + self.replace_mods[cap]
+
+        if mod != '':
+            mod = mod[:-1].replace(mod[-1], ' ')
+        self.mod_listener(unicode(glib.markup_escape_text(mod)))
+
+
     def key_normal_mode(self, event):
         # Visible modifiers
         mod = ''
-        for cap in ['ctrl', 'alt', 'super', 'hyper']:
+        for cap in ['shift', 'ctrl', 'alt', 'super', 'hyper']:
             if event.modifiers[cap]:
                 mod = mod + self.replace_mods[cap]
 
@@ -349,13 +374,6 @@ class LabelManager(object):
                 repl = event.string or event.symbol
                 markup = unicode(glib.markup_escape_text(repl))
                 key_repl = KeyRepl(False, False, len(repl) > 1, markup)
-
-        if event.modifiers['shift'] and \
-           (replaced or (mod != '' and \
-                         self.vis_shift and \
-                         self.mods_mode != 'emacs')):
-            # add back shift for translated keys
-            mod = mod + self.replace_mods['shift']
 
         # Whitespace handling
         if not self.vis_space and mod == '' and event.symbol in WHITESPACE_SYMS:
@@ -440,3 +458,18 @@ class LabelManager(object):
             value = event.string or event.symbol
         self.data.append(KeyData(datetime.now(), True, True, True, True, value))
         return True
+
+
+    def btn_press(self, event):
+        if not self.enabled:
+            return False
+
+        if event.pressed:
+            action = "pressed"
+        else:
+            action = "released"
+        self.logger.debug("Mouse button %d %s" % (event.btn, action))
+
+        self.image_listener(
+            ButtonData(datetime.now(), event.btn, event.pressed)
+        )

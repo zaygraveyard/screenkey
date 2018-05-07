@@ -9,9 +9,11 @@ from . import *
 from .labelmanager import LabelManager
 
 from threading import Timer
+from datetime import datetime
 import json
 import os
 import subprocess
+from tempfile import NamedTemporaryFile
 
 import glib
 glib.threads_init()
@@ -22,6 +24,39 @@ pygtk.require('2.0')
 import gtk
 import pango
 import cairo
+
+
+BUTTONS_SVG = None
+
+def load_button_pixbufs(color):
+    global BUTTONS_SVG
+
+    if BUTTONS_SVG is None:
+        with open('images/mouse.svg', 'r') as svg_file:
+            BUTTONS_SVG = svg_file.readlines()
+
+    if not isinstance(color, basestring):
+        # gtk.gdk.Color
+        color = 'rgb({}, {}, {})'.format(
+            round(color.red_float * 255),
+            round(color.green_float * 255),
+            round(color.blue_float * 255)
+        )
+    button_pixbufs = []
+    svg = NamedTemporaryFile(mode='w', suffix='.svg')
+    for line in BUTTONS_SVG[1:-1]:
+        svg.seek(0)
+        svg.truncate()
+        svg.writelines((
+            BUTTONS_SVG[0],
+            line.replace('#fff', color),
+            BUTTONS_SVG[-1],
+        ))
+        svg.flush()
+        os.fsync(svg.fileno())
+        button_pixbufs.append(gtk.gdk.pixbuf_new_from_file(svg.name))
+    svg.close()
+    return button_pixbufs
 
 
 class Screenkey(gtk.Window):
@@ -54,7 +89,9 @@ class Screenkey(gtk.Window):
                             'vis_shift': False,
                             'vis_space': True,
                             'geometry': None,
-                            'screen': 0})
+                            'screen': 0,
+                            'mouse': False,
+                            'button_hide_duration': 1})
         self.options = self.load_state()
         if self.options is None:
             self.options = defaults
@@ -74,15 +111,30 @@ class Screenkey(gtk.Window):
         self.set_focus_on_map(False)
         self.set_app_paintable(True)
 
+        self.button_pixbufs = []
+        self.button_states = [None] * 8
+        self.img = gtk.Image()
+        self.update_image_tag = None
+
+        self.box = gtk.HBox(homogeneous=False)
+        self.box.show()
+        self.add(self.box)
+
+        self.mod_label = gtk.Label()
+        self.mod_label.set_attributes(pango.AttrList())
+        self.mod_label.set_ellipsize(pango.ELLIPSIZE_NONE)
+        self.mod_label.set_justify(gtk.JUSTIFY_LEFT)
+        self.mod_label.show()
+
         self.label = gtk.Label()
         self.label.set_attributes(pango.AttrList())
         self.label.set_ellipsize(pango.ELLIPSIZE_START)
         self.label.set_justify(gtk.JUSTIFY_CENTER)
         self.label.show()
-        self.add(self.label)
 
         self.font = pango.FontDescription(self.options.font_desc)
         self.update_colors()
+        self.update_mouse_enabled()
 
         self.set_size_request(0, 0)
         self.set_gravity(gtk.gdk.GRAVITY_CENTER)
@@ -97,6 +149,10 @@ class Screenkey(gtk.Window):
         cmap = scr.get_rgba_colormap()
         if cmap is not None:
             self.set_colormap(cmap)
+
+        self.box.pack_start(self.img, expand=False)
+        self.box.pack_start(self.mod_label, expand=False)
+        self.box.pack_end(self.label)
 
         self.labelmngr = None
         self.enabled = True
@@ -163,6 +219,21 @@ class Screenkey(gtk.Window):
         self.set_active_monitor(self.monitor)
 
 
+    def update_mouse_enabled(self):
+        if self.options.mouse:
+            if not self.button_pixbufs:
+                self.button_pixbufs = load_button_pixbufs(
+                    gtk.gdk.color_parse(self.options.font_color)
+                )
+            self.img.show()
+            self.update_image_tag = glib.idle_add(self.update_image)
+        else:
+            self.img.hide()
+            if self.update_image_tag is not None:
+                glib.source_remove(self.update_image_tag)
+                self.update_image_tag = None
+
+
     def override_font_attributes(self, attr, text):
         window_width, window_height = self.get_size()
         lines = text.count('\n') + 1
@@ -172,15 +243,64 @@ class Screenkey(gtk.Window):
 
 
     def update_label(self):
+        attr = self.mod_label.get_attributes()
+        text = self.mod_label.get_text()
+        self.override_font_attributes(attr, text)
+        self.mod_label.set_attributes(attr)
         attr = self.label.get_attributes()
         text = self.label.get_text()
         self.override_font_attributes(attr, text)
         self.label.set_attributes(attr)
 
 
+    def update_image(self):
+        if not self.button_pixbufs:
+            return
+
+        pixbuf = self.button_pixbufs[0]
+        copied = False
+
+        for index, button_state in enumerate(self.button_states):
+            if button_state is None:
+                continue
+            if button_state.pressed:
+                alpha = 255
+            else:
+                if self.options.button_hide_duration > 0:
+                    delta_time = (datetime.now() - button_state.stamp).total_seconds()
+                    hide_time = delta_time / self.options.button_hide_duration
+                else:
+                    hide_time = 1
+                if hide_time < 1:
+                    alpha = int(255 * (1 - hide_time))
+                else:
+                    self.button_states[index] = None
+                    continue
+
+            if not copied:
+                pixbuf = pixbuf.copy()
+            self.button_pixbufs[button_state.btn].composite(
+                pixbuf, 0, 0, pixbuf.get_width(), pixbuf.get_height(),
+                0, 0, 1, 1,
+                gtk.gdk.INTERP_NEAREST, alpha
+            )
+
+        _, height = self.get_size()
+        scale = height / pixbuf.get_height()
+        if scale != 1:
+            width = int(pixbuf.get_width() * scale)
+            pixbuf = pixbuf.scale_simple(width, height, gtk.gdk.INTERP_BILINEAR)
+        self.img.set_from_pixbuf(pixbuf)
+        return True
+
+
     def update_colors(self):
-        self.label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse(self.options.font_color))
+        font_color = gtk.gdk.color_parse(self.options.font_color)
+        self.mod_label.modify_fg(gtk.STATE_NORMAL, font_color)
+        self.label.modify_fg(gtk.STATE_NORMAL, font_color)
         self.bg_color = gtk.gdk.color_parse(self.options.bg_color)
+        if self.options.mouse and self.button_pixbufs:
+            self.button_pixbufs = load_button_pixbufs(font_color)
 
 
     def on_expose(self, widget, *_):
@@ -205,9 +325,11 @@ class Screenkey(gtk.Window):
         self.input_shape_combine_mask(mask, 0, 0)
 
         # set some proportional inner padding
+        self.mod_label.set_padding(window_width // 100, 0)
         self.label.set_padding(window_width // 100, 0)
 
         self.update_label()
+        self.update_image()
 
 
     def update_geometry(self, configure=False):
@@ -229,6 +351,7 @@ class Screenkey(gtk.Window):
             window_height = 12 * area_geometry[3] // 100
         else:
             window_height = 8 * area_geometry[3] // 100
+
         self.resize(area_geometry[2], window_height)
 
         if self.options.position == 'top':
@@ -252,23 +375,41 @@ class Screenkey(gtk.Window):
         super(Screenkey, self).show()
 
 
+    def timed_show(self):
+        if not self.get_property('visible'):
+            self.show()
+        if self.timer_hide:
+            self.timer_hide.cancel()
+        if self.options.timeout > 0 and not any(b and b.pressed for b in self.button_states):
+            self.timer_hide = Timer(self.options.timeout, self.on_timeout_main)
+            self.timer_hide.start()
+
+
     def on_label_change(self, markup):
         attr, text, _ = pango.parse_markup(markup)
         self.override_font_attributes(attr, text)
         self.label.set_text(text)
         self.label.set_attributes(attr)
 
-        if not self.get_property('visible'):
-            self.show()
-        if self.timer_hide:
-            self.timer_hide.cancel()
-        if self.options.timeout > 0:
-            self.timer_hide = Timer(self.options.timeout, self.on_timeout_main)
-            self.timer_hide.start()
+        self.timed_show()
         if self.timer_min:
             self.timer_min.cancel()
         self.timer_min = Timer(self.options.recent_thr * 2, self.on_timeout_min)
         self.timer_min.start()
+
+
+    def on_mod_change(self, markup):
+        attr, text, _ = pango.parse_markup(markup)
+        self.override_font_attributes(attr, text)
+        self.mod_label.set_text(text)
+        self.mod_label.set_attributes(attr)
+        self.timed_show()
+
+
+    def on_image_change(self, button_state):
+        self.button_states[button_state.btn] = button_state
+        if self.options.mouse:
+            self.timed_show()
 
 
     def on_timeout_main(self):
@@ -288,7 +429,10 @@ class Screenkey(gtk.Window):
         self.logger.debug("Restarting LabelManager.")
         if self.labelmngr:
             self.labelmngr.stop()
-        self.labelmngr = LabelManager(self.on_label_change, logger=self.logger,
+        self.labelmngr = LabelManager(self.on_label_change,
+                                      self.on_mod_change,
+                                      self.on_image_change,
+                                      logger=self.logger,
                                       key_mode=self.options.key_mode,
                                       bak_mode=self.options.bak_mode,
                                       mods_mode=self.options.mods_mode,
@@ -472,6 +616,15 @@ class Screenkey(gtk.Window):
             self.options.font_desc = widget.get_font_name()
             self.font = pango.FontDescription(self.options.font_desc)
             self.update_label()
+
+        def on_cbox_mouse_changed(widget, data=None):
+            self.options.mouse = widget.get_active()
+            self.logger.debug("Mouse changed: %s." % self.options.mouse)
+            self.update_mouse_enabled()
+
+        def on_sb_mouse_duration_changed(widget, data=None):
+            self.options.button_hide_duration = widget.get_value()
+            self.logger.debug("Button hide duration value changed: %f." % self.options.button_hide_duration)
 
         frm_main = gtk.Frame(_("Preferences"))
         frm_main.set_border_width(6)
@@ -693,6 +846,35 @@ class Screenkey(gtk.Window):
         vbox_color.pack_start(hbox5_opacity)
         frm_color.add(vbox_color)
 
+        frm_mouse = gtk.Frame("<b>%s</b>" % _("Mouse"))
+        frm_mouse.set_border_width(4)
+        frm_mouse.get_label_widget().set_use_markup(True)
+        frm_mouse.set_shadow_type(gtk.SHADOW_NONE)
+        vbox_mouse = gtk.VBox(spacing=6)
+
+        chk_mouse = gtk.CheckButton(_("Show Mouse"))
+        chk_mouse.connect("toggled", on_cbox_mouse_changed)
+        chk_mouse.set_active(self.options.mouse)
+        vbox_mouse.pack_start(chk_mouse)
+
+        hbox_mouse = gtk.HBox()
+        lbl_mouse1 = gtk.Label(_("Hide duration"))
+        lbl_mouse2 = gtk.Label(_("seconds"))
+        sb_mouse = gtk.SpinButton(digits=1)
+        sb_mouse.set_increments(0.5, 1.0)
+        sb_mouse.set_range(0.0, 2.0)
+        sb_mouse.set_numeric(True)
+        sb_mouse.set_update_policy(gtk.UPDATE_IF_VALID)
+        sb_mouse.set_value(self.options.button_hide_duration)
+        sb_mouse.connect("value-changed", on_sb_mouse_duration_changed)
+        hbox_mouse.pack_start(lbl_mouse1, expand=False, fill=False, padding=6)
+        hbox_mouse.pack_start(sb_mouse, expand=False, fill=False, padding=4)
+        hbox_mouse.pack_start(lbl_mouse2, expand=False, fill=False, padding=4)
+        vbox_mouse.pack_start(hbox_mouse)
+
+        frm_mouse.add(vbox_mouse)
+        frm_mouse.show_all()
+
         hbox_main = gtk.HBox()
         vbox_main = gtk.VBox()
         vbox_main.pack_start(frm_time, False, False, 6)
@@ -702,6 +884,7 @@ class Screenkey(gtk.Window):
         vbox_main = gtk.VBox()
         vbox_main.pack_start(frm_kbd, False, False, 6)
         vbox_main.pack_start(frm_color, False, False, 6)
+        vbox_main.pack_start(frm_mouse, False, False, 6)
         hbox_main.pack_start(vbox_main)
         frm_main.add(hbox_main)
 
